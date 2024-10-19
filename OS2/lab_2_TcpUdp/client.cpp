@@ -23,7 +23,8 @@ void form_messages(std::vector<std::string>& msgs, std::string& filename) {
     uint32_t date = 0, num2 = 0, msg_len = 0, net_msg_len = 0;
     int16_t num1 = 0;
     if(str.size() == 0) continue;
-    
+      
+    std::cout << str << " | msg_idx: " << msg_idx << "\n";
     uint32_t idx = 0;
     std::string msg;
     uint32_t net_msg_idx = htonl(msg_idx);
@@ -62,10 +63,11 @@ void form_messages(std::vector<std::string>& msgs, std::string& filename) {
         default: break;
       }
       
-      msgs.push_back(msg);
       idx++;
       tk = std::strtok(nullptr, delimeters);
     }
+    msgs.push_back(msg);
+    msg_idx++;
   }
 }
 
@@ -103,9 +105,12 @@ int main() {
   
   std::vector<std::string> msgs;
   form_messages(msgs, filename);
-  
-  for(int i=0; i<10; i++) {
-    send_status = send(sockfd, "Hello", 5, 0);
+    
+  std::cout << "Messages size: " << msgs.size() << "\n";
+  for(int i=0; i<msgs.size(); i++) {
+    // send_status = send(sockfd, "Hello", 5, 0);
+    std::cout << "Try to send: " << msgs[i].c_str() << " Size: " << msgs[i].size() << "\n";
+    send_status = send(sockfd, msgs[i].c_str(), msgs[i].size(), 0);
     memset(msg_buf, 0, MSG_LEN);
     recv_status = recv(sockfd, msg_buf, 2, 0);
     std::cout << "Message from server: " << msg_buf << "\n";

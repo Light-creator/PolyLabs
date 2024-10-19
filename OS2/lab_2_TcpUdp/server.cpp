@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <fstream>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -14,10 +15,50 @@
 #define MSG_LEN     1024
 #define CLIENTS_LEN 64
 
+union converter {
+  char str[6];
+  uint32_t u32;
+  uint16_t u16;
+  int16_t i16;
+};
+
+void parse_msg(char* msg_buf, std::ofstream& file) {
+  converter conv;
+  // Parse idx
+  conv.str[0] = msg_buf[3]; conv.str[1] = msg_buf[2]; conv.str[2] = msg_buf[1]; conv.str[3] = msg_buf[0]; 
+  std::cout << "Message index: " << conv.u32 << "\n";
+  
+  // Parse date
+  conv.str[0] = msg_buf[7]; conv.str[1] = msg_buf[6]; conv.str[2] = msg_buf[5]; conv.str[3] = msg_buf[4];
+  uint32_t date = conv.u32;
+  int y = date / 10000;
+  int m = date % 10000 / 100;
+  int d = date % 100;
+  std::cout << "Date: " << d << "." << m << "." << y << "\n";
+
+  // Parse signed num
+  conv.str[0] = msg_buf[9]; conv.str[1] = msg_buf[8];   
+  std::cout << "Signed num: " << conv.i16 << "\n";
+
+  // Parse unsigned num
+  conv.str[0] = msg_buf[13]; conv.str[1] = msg_buf[12]; conv.str[2] = msg_buf[11]; conv.str[3] = msg_buf[10];
+  std::cout << "Unsigned num: " << conv.u32 << "\n";
+  
+  // Parse text length
+  conv.str[0] = msg_buf[17]; conv.str[1] = msg_buf[16]; conv.str[2] = msg_buf[15]; conv.str[3] = msg_buf[14];
+  std::cout << "Text length: " << conv.u32 << "\n";
+  
+  std::cout << "Text message: " << msg_buf+18 << "\n";
+}
+
 int main() {
   // Describes IPv4 address
   struct sockaddr_in server_addr, client_addr;
   int client_len = 0;
+
+  std::string filename = "msgs.txt";
+  std::ofstream file(filename);
+
 
   // int clients[CLIENTS_LEN] = {0};
   fd_set rfd;
@@ -61,10 +102,12 @@ int main() {
         bool flag_recv = false;
    
         if(pfds[i].revents & POLLHUP) {
+          std::cout << "Client " << clients[i] << " closed connection...\n";
           close(clients[i]);
         }
 
         if(pfds[i].revents & POLLERR) {
+          std::cout << "Client " << clients[i] << " error: close connection\n";
           close(clients[i]);
         }
 
@@ -72,7 +115,10 @@ int main() {
           int recv_status = recv(clients[i], msg_buf, MSG_LEN, 0);
           std::cout << "Client " << clients[i] << " message: " << msg_buf << "\n";
           if(strncmp(msg_buf, "stop", 4) == 0) goto done;
+          else parse_msg(msg_buf, file);
           flag_recv = true;
+          
+
         }
 
         if(pfds[i].revents & POLLOUT && flag_recv) {
