@@ -114,7 +114,8 @@ int main() {
     memset(msg_buf, 0, MSG_LEN);
     recv_status = recv(sockfd, msg_buf, 2, 0);
     std::cout << "Message from server: " << msg_buf << "\n";
-    sleep(1);
+    usleep(500);
+    // sleep(1);
   }
 
   send_status = send(sockfd, "stop", 4, 0);

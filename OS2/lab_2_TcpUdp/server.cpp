@@ -9,6 +9,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <sys/poll.h>
+#include <arpa/inet.h>
 
 #include <fcntl.h>
 
@@ -22,34 +23,52 @@ union converter {
   int16_t i16;
 };
 
-void parse_msg(char* msg_buf, std::ofstream& file) {
+struct client_t {
+  int fd;
+  int port;
+  std::string ip;
+};
+
+void parse_msg(client_t& client, char* msg_buf, std::ofstream& file) {
+  char msg[MSG_LEN] = {0};
   converter conv;
+
+  file << client.ip << ":" << client.port << " ";
+
   // Parse idx
   conv.str[0] = msg_buf[3]; conv.str[1] = msg_buf[2]; conv.str[2] = msg_buf[1]; conv.str[3] = msg_buf[0]; 
-  std::cout << "Message index: " << conv.u32 << "\n";
-  
+  // std::cout << "Message index: " << conv.u32 << "\n";
+  // file << conv.u32 << " ";
   // Parse date
   conv.str[0] = msg_buf[7]; conv.str[1] = msg_buf[6]; conv.str[2] = msg_buf[5]; conv.str[3] = msg_buf[4];
   uint32_t date = conv.u32;
   int y = date / 10000;
   int m = date % 10000 / 100;
   int d = date % 100;
-  std::cout << "Date: " << d << "." << m << "." << y << "\n";
-
+  // std::cout << "Date: " << d << "." << m << "." << y << "\n";
+  file << d << "." << m << "." << y << " ";
   // Parse signed num
   conv.str[0] = msg_buf[9]; conv.str[1] = msg_buf[8];   
-  std::cout << "Signed num: " << conv.i16 << "\n";
+  // std::cout << "Signed num: " << conv.i16 << "\n";
+  file << conv.i16 << " ";
 
   // Parse unsigned num
   conv.str[0] = msg_buf[13]; conv.str[1] = msg_buf[12]; conv.str[2] = msg_buf[11]; conv.str[3] = msg_buf[10];
-  std::cout << "Unsigned num: " << conv.u32 << "\n";
-  
+  // std::cout << "Unsigned num: " << conv.u32 << "\n";
+  file << conv.u32 << " ";
+
   // Parse text length
   conv.str[0] = msg_buf[17]; conv.str[1] = msg_buf[16]; conv.str[2] = msg_buf[15]; conv.str[3] = msg_buf[14];
-  std::cout << "Text length: " << conv.u32 << "\n";
-  
-  std::cout << "Text message: " << msg_buf+18 << "\n";
+  // std::cout << "Text length: " << conv.u32 << "\n";
+  uint32_t len = conv.u32;
+
+  // std::cout << "Text message: " << msg_buf+18 << "\n";
+  // std::memcpy(msg_buf+18, msg, len);
+  // std::cout << "msg: " << msg << " | " << msg_buf+18; 
+  file << msg_buf+18 << "\n";
 }
+
+
 
 int main() {
   // Describes IPv4 address
@@ -87,7 +106,7 @@ int main() {
   
   int maxfd = sockfd;
   char msg_buf[MSG_LEN];
-  std::vector<int> clients;
+  std::vector<client_t> clients;
   // int clients[CLIENTS_LEN];
   
   // Configure pollfd array
@@ -102,38 +121,47 @@ int main() {
         bool flag_recv = false;
    
         if(pfds[i].revents & POLLHUP) {
-          std::cout << "Client " << clients[i] << " closed connection...\n";
-          close(clients[i]);
+          std::cout << "Client " << clients[i].fd << " closed connection...\n";
+          close(clients[i].fd);
         }
 
         if(pfds[i].revents & POLLERR) {
-          std::cout << "Client " << clients[i] << " error: close connection\n";
-          close(clients[i]);
+          std::cout << "Client " << clients[i].fd << " error: close connection\n";
+          close(clients[i].fd);
         }
 
         if(pfds[i].revents & POLLIN) {
-          int recv_status = recv(clients[i], msg_buf, MSG_LEN, 0);
-          std::cout << "Client " << clients[i] << " message: " << msg_buf << "\n";
-          if(strncmp(msg_buf, "stop", 4) == 0) goto done;
-          else parse_msg(msg_buf, file);
+          int recv_status = recv(clients[i].fd, msg_buf, MSG_LEN, 0);
+          // std::cout << "Client " << clients[i].fd << " message: " << msg_buf << "\n";
+          if(strncmp(msg_buf, "put", 3) == 0) {}
+          else if(strncmp(msg_buf, "stop", 4) == 0) goto done;
+          else parse_msg(clients[i], msg_buf, file);
           flag_recv = true;
-          
-
         }
 
         if(pfds[i].revents & POLLOUT && flag_recv) {
-          int send_status = send(clients[i], "ok", 2, 0);
+          int send_status = send(clients[i].fd, "ok", 2, 0);
         }
       }
 
       if(pfds[CLIENTS_LEN].revents & POLLIN) {
         int clientfd = accept(sockfd, (struct sockaddr*)&client_addr, (socklen_t*)&client_len);
-        std::cout << "Client: " << clientfd << " connected...\n";
+        
+        char addr_buf[16];
+        inet_ntop(AF_INET, &client_addr.sin_addr, addr_buf, sizeof(addr_buf));
+        
+        client_t client;
+
+        client.fd = clientfd;
+        client.ip = addr_buf;
+        client.port = htons(client_addr.sin_port);
+
+        std::cout << "Client: " << client.ip << ":" << client.port << " connected...\n";
 
         pfds[clients.size()].fd = clientfd;
         pfds[clients.size()].events = POLLIN | POLLOUT;
 
-        clients.push_back(clientfd);
+        clients.push_back(client);
       }
     } else {
       std::cout << "Timed out\n";
@@ -142,7 +170,7 @@ int main() {
   }
 
 done:
-  for(int i=0; i<clients.size(); i++) close(clients[i]);
+  for(int i=0; i<clients.size(); i++) close(clients[i].fd);
   close(sockfd);
 
   return 0;
